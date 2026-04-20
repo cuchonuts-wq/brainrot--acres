@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BRAINROT ACRES 🌱</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Press Start 2P', monospace, sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 512px;
+            height: 480px;
+            background: #2d5a27;
+            image-rendering: pixelated;
+            border: 4px solid #000;
+        }
+        canvas { display: block; }
+        
+        /* Mobile responsive */
+        @media (max-width: 568px) {
+            #game-container {
+                width: 100vw;
+                height: calc(100vw * 240 / 256);
+            }
+        }
+        
+        /* Touch controls for mobile */
+        .touch-controls {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 10px;
+            z-index: 100;
+        }
+        @media (max-width: 768px) {
+            .touch-controls { display: flex; }
+        }
+        .touch-btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255,255,255,0.3);
+            border: 2px solid white;
+            border-radius: 10px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .touch-btn:active { background: rgba(255,255,255,0.5); }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="256" height="240"></canvas>
+    </div>
+    
+    <!-- Mobile touch controls -->
+    <div class="touch-controls">
+        <div class="touch-btn" data-key="ArrowUp">⬆️</div>
+        <div class="touch-btn" data-key="ArrowLeft">⬅️</div>
+        <div class="touch-btn" data-key="ArrowRight">➡️</div>
+        <div class="touch-btn" data-key="ArrowDown">⬇️</div>
+        <div class="touch-btn" data-key="z">Z</div>
+    </div>
+
+<script>
+// ============================================
+// BRAINROT ACRES - Web Version
+// ============================================
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Disable smoothing for retro look
+ctx.imageSmoothingEnabled = false;
+
+// ============================================
+// GAME CONSTANTS & DATA
+// ============================================
+
+const COLORS = {
+    BLACK: '#000000', WHITE: '#FFFFFF',
+    GRASS_DARK: '#228B22', GRASS_LIGHT: '#55AA55',
+    DIRT: '#8B4513', RED: '#DC143C', GREEN: '#28B428',
+    BLUE: '#143CDC', YELLOW: '#FFDC00', ORANGE: '#FF8C00',
+    PURPLE: '#B43CDC', PINK: '#FF64C8', GOLD: '#FFD700'
+};
+
+const PLANTS = {
+    basic: { name: 'Sprout', color: COLORS.GREEN, growthTime: 3000, value: 5, emoji: '🌱' },
+    meme: { name: 'Meme Flower', color: COLORS.WHITE, growthTime: 5000, value: 12, emoji: '💀' },
+    skibidi: { name: 'Skibidi Bloom', color: COLORS.PURPLE, growthTime: 8000, value: 25, emoji: '🚽' },
+    sigma: { name: 'Sigma Rose', color: COLORS.RED, growthTime: 12000, value: 50, emoji: '😎' },
+    gyatt: { name: 'Gyatt Berry', color: COLORS.PINK, growthTime: 15000, value: 75, emoji: '🍒' },
+};
+
+const PETS = {
+    doge: { name: 'Doge', emoji: '🐕', buff: 1.1 },
+    pepe: { name: 'Pepe', emoji: '🐸', buff: 1.15 },
+    shrek: { name: 'Shrek', emoji: '👹', buff: 1.2 },
+};
+
+const EVENTS = [
+    { name: 'Skibidi Storm!', type: 'damage' },
+    { name: 'Lucky Drop! 💰', type: 'bonus', value: 50 },
+    { name: 'Oof Invasion!', type: 'theft' }
+];
+
+const SHOP_ITEMS = [
+    { name: 'Sprout Seeds 🌱', price: 10, type: 'seed', plantType: 'basic', qty: 3 },
+    { name: 'Meme Seeds 💀', price: 25, type: 'seed', plantType: 'meme', qty: 2 },
+    { name: 'Skibidi Seeds 🚽', price: 50, type: 'seed', plantType: 'skibidi', qty: 1 },
+    { name: 'Fertilizer 💧', price: 100, type: 'upgrade' },
+];
+
+// ============================================
+// GAME STATE
+// ============================================
+
+let gameState = {
+    screen: 'title', // title, playing, pause, shop, pets
+    money: 50,
+    level: 1,
+    exp: 0,
+    maxPlots: 4,
+    plots: Array(6).fill(null).map(() => Array(6).fill(null)),
+    seeds: { basic: 3 },
+    pets: [],
+    collectedPets: new Set(),
+    cursorX: 2,
+    cursorY: 2,
+    shopSelection: 0,
+    particles: [],
+    shake: 0,
+    activeEvent: null,
+    eventTimer: 0,
+    growthSpeed: 1.0,
+    moneyMultiplier: 1.0,
+    lastTime: Date.now()
+};
+
+// ============================================
+// INPUT HANDLING
+// ============================================
+
+document.addEventListener('keydown', (e) => {
+    handleInput(e.key);
+});
+
+// Touch controls for mobile
+document.querySelectorAll('.touch-btn').forEach(btn => {
+    btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const key = btn.dataset.key;
+        if (key === 'z') key = 'z';
+        handleInput(key);
+    });
+});
+
+function handleInput(key) {
+    key = key.toLowerCase();
+    
+    if (gameState.screen === 'title') {
+        if (key === 'z' || key === 'enter') startGame();
+        
+    } else if (gameState.screen === 'playing') {
+        // Movement
+        if (key === 'arrowup' && gameState.cursorY > 0) gameState.cursorY--;
+        else if (key === 'arrowdown' && gameState.cursorY < Math.min(5, gameState.maxPlots - 1)) gameState.cursorY++;
+        else if (key === 'arrowleft' && gameState.cursorX > 0) gameState.cursorX--;
+        else if (key === 'arrowright' && gameState.cursorX < 5) gameState.cursorX++;
+        
+        // Actions
+        else if (key === 'z') handlePlotAction();
+        else if (key === 'x' || key === 'escape') gameState.screen = 'pause';
+        
+    } else if (gameState.screen === 'pause') {
+        if (key === 'z' || key === 'enter') gameState.screen = 'playing';
+        else if (key === 'p') {
+            gameState.screen = 'shop';
+            gameState.shopSelection = 0;
+        }
+        else if (key === 'm') gameState.screen = 'pets';
+        
+    } else if (gameState.screen === 'shop') {
+        if (key === 'arrowup' && gameState.shopSelection > 0) gameState.shopSelection--;
+        else if (key === 'arrowdown' && gameState.shopSelection < SHOP_ITEMS.length - 1) gameState.shopSelection++;
+        else if (key === 'z' || key === 'enter') buyItem();
+        else if (key === 'x' || key === 'escape') gameState.screen = 'pause';
+        
+    } else if (gameState.screen === 'pets') {
+        if (key === 'x' || key === 'escape') gameState.screen = 'pause';
+    }
+}
+
+// ============================================
+// GAME LOGIC
+// ============================================
+
+function startGame() {
+    gameState.screen = 'playing';
+    gameState.money = 50;
+    gameState.seeds.basic = 3;
+}
+
+function handlePlotAction() {
+    const plot = gameState.plots[gameState.cursorY][gameState.cursorX];
+    
+    if (!plot) {
+        // Plant seed
+        for (let type in gameState.seeds) {
+            if (gameState.seeds[type] > 0) {
+                plantSeed(type);
+                break;
+            }
+        }
+    } else if (plot.ready) {
+        harvestPlot();
+    }
+}
+
+function plantSeed(seedType) {
+    if (gameState.seeds[seedType] > 0) {
+        gameState.seeds[seedType]--;
+        const plantData = PLANTS[seedType];
+        
+        gameState.plots[gameState.cursorY][gameState.cursorX] = {
+            type: seedType,
+            stage: 0,
+            plantedAt: Date.now(),
+            ready: false,
+            emoji: plantData.emoji
+        };
+        
+        addParticles(gameState.cursorX * 16 + 8, gameState.cursorY * 16 + 8, COLORS.GREEN, 5);
+    }
+}
+
+function harvestPlot() {
+    const plot = gameState.plots[gameState.cursorY][gameState.cursorX];
+    const plantData = PLANTS[plot.type];
+    
+    // Calculate value with buffs
+    let value = plantData.value;
+    for (let pet of gameState.pets) {
+        value *= PETS[pet].buff;
+    }
+    value = Math.floor(value * gameState.moneyMultiplier);
+    
+    if (gameState.activeEvent && gameState.activeEvent.type === 'bonus') {
+        value += 50;
+    }
+    
+    gameState.money += value;
+    gameState.exp += Math.max(1, Math.floor(value / 2));
+    
+    // Level up
+    const levelExp = gameState.level * 100;
+    if (gameState.exp >= levelExp) {
+        gameState.level++;
+        gameState.exp -= levelExp;
+        addParticles(gameState.cursorX * 16 + 8, gameState.cursorY * 16 + 8, COLORS.GOLD, 15);
+    }
+    
+    // Effects
+    gameState.shake = 5;
+    addParticles(gameState.cursorX * 16 + 8, gameState.cursorY * 16 + 8, plantData.color, 10);
+    
+    // Clear plot
+    gameState.plots[gameState.cursorY][gameState.cursorX] = null;
+    
+    // Chance for pet!
+    if (Math.random() < 0.05) {
+        spawnRandomPet();
+    }
+}
+
+function spawnRandomPet() {
+    for (let type in PETS) {
+        if (!gameState.collectedPets.has(type) && Math.random() < 0.3) {
+            gameState.pets.push({ type: type, emoji: PETS[type].emoji });
+            gameState.collectedPets.add(type);
+            break;
+        }
+    }
+}
+
+function buyItem() {
+    const item = SHOP_ITEMS[gameState.shopSelection];
+    if (gameState.money >= item.price) {
+        gameState.money -= item.price;
+        
+        if (item.type === 'seed') {
+            gameState.seeds[item.plantType] = (gameState.seeds[item.plantType] || 0) + item.qty;
+        } else if (item.type === 'upgrade') {
+            gameState.growthSpeed *= 1.25;
+        }
+    }
+}
+
+// ============================================
+// UPDATE LOOP
+// ============================================
+
+function update() {
+    const now = Date.now();
+    
+    // Update plant growth
+    for (let y = 0; y < Math.min(6, gameState.maxPlots); y++) {
+        for (let x = 0; x < 6; x++) {
+            const plot = gameState.plots[y][x];
+            if (plot && !plot.ready) {
+                const plantData = PLANTS[plot.type];
+                let speed = gameState.growthSpeed;
+                
+                // Pet buffs
+                for (let pet of gameState.pets) {
+                    if (PETS[pet].buff > 1.1) speed *= PETS[pet].buff;
+                }
+                
+                const elapsed = now - plot.plantedAt;
+                const requiredTime = plantData.growthTime / speed;
+                
+                if (elapsed >= requiredTime) {
+                    plot.ready = true;
+                    plot.stage = 3;
+                } else {
+                    // Update visual stage
+                    const progress = elapsed / requiredTime;
+                    plot.stage = Math.floor(progress * 4);
+                }
+            }
+        }
+    }
+    
+    // Event system
+    if (gameState.activeEvent) {
+        gameState.eventTimer -= 16; // ~60fps
+        
+        if (gameState.activeEvent.type === 'damage') {
+            for (let y = 0; y < Math.min(6, gameState.maxPlots); y++) {
+                for (let x = 0; x < 6; x++) {
+                    if (gameState.plots[y][x] && Math.random() < 0.01) {
+                        gameState.plots[y][x] = null;
+                    }
+                }
+            }
+        } else if (gameState.activeEvent.type === 'theft') {
+            if (gameState.money > 0 && Math.random() < 0.02) {
+                gameState.money -= Math.min(5, gameState.money);
+            }
+        }
+        
+        if (gameState.eventTimer <= 0) {
+            gameState.activeEvent = null;
+        }
+    } else if (Math.random() < 0.001) {
+        // Random event spawn
+        const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+        gameState.activeEvent = event;
+        gameState.eventTimer = 5000;
+        
+        if (event.type === 'bonus') {
+            gameState.money += event.value || 50;
+        }
+    }
+    
+    // Update particles
+    gameState.particles = gameState.particles.filter(p => p.life > 0);
+    for (let particle of gameState.particles) {
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        particle.life -= 16;
+    }
+    
+    // Shake decay
+    if (gameState.shake > 0) gameState.shake--;
+}
+
+function addParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 3;
+        gameState.particles.push({
+            x: x, y: y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            color: color,
+            life: 300 + Math.random() * 300,
+            size: 2 + Math.random() * 2
+        });
+    }
+}
+
+// ============================================
+// RENDER FUNCTIONS
+// ============================================
+
+function render() {
+    const shakeX = gameState.shake > 0 ? (Math.random() - 0.5) * 4 : 0;
+    const shakeY = gameState.shake > 0 ? (Math.random() - 0.5) * 4 : 0;
+    
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    
+    if (gameState.screen === 'title') {
+        renderTitle();
+    } else if (gameState.screen === 'playing') {
+        renderGameplay();
+    } else if (gameState.screen === 'pause') {
+        renderPause();
+    } else if (gameState.screen === 'shop') {
+        renderShop();
+    } else if (gameState.screen === 'pets') {
+        renderPets();
+    }
+    
+    ctx.restore();
+}
+
+function renderTitle() {
+    // Background
+    ctx.fillStyle = COLORS.GRASS_DARK;
+    ctx.fillRect(0, 0, 256, 240);
+    
+    // Title with shadow
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    
+    ctx.fillStyle = COLORS.BLACK;
+    ctx.fillText('BRAINROT', 130, 85);
+    ctx.fillText('ACRES', 130, 102);
+    
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.fillText('BRAINROT', 128, 83);
+    ctx.fillText('ACRES', 128, 100);
+    
+    // Subtitle
+    ctx.font = '10px monospace';
+    ctx.fillStyle = COLORS.GREEN;
+    ctx.fillText('🌱 A Garden Tycoon 🌱', 128, 125);
+    
+    // Blinking start text
+    if (Math.floor(Date.now() / 500) % 2 === 0) {
+        ctx.fillStyle = COLORS.YELLOW;
+        ctx.fillText('Press Z to Start', 128, 160);
+    }
+    
+    // Decorative plants at bottom
+    const emojis = ['🌱', '💀', '🚽', '😎'];
+    for (let i = 0; i < 5; i++) {
+        ctx.font = '12px monospace';
+        ctx.fillText(emojis[i % emojis.length], 30 + i * 45, 225);
+    }
+}
+
+function renderGameplay() {
+    // Background
+    for (let y = 0; y < Math.min(6, gameState.maxPlots); y++) {
+        for (let x = 0; x < 6; x++) {
+            ctx.fillStyle = (x + y) % 2 === 0 ? COLORS.GRASS_LIGHT : COLORS.GRASS_DARK;
+            ctx.fillRect(x * 16, y * 16, 16, 16);
+        }
+    }
+    
+    // Draw plants
+    for (let y = 0; y < Math.min(6, gameState.maxPlots); y++) {
+        for (let x = 0; x < 6; x++) {
+            const plot = gameState.plots[y][x];
+            if (plot) {
+                const plantData = PLANTS[plot.type];
+                
+                // Plant size based on stage
+                const size = 4 + plot.stage * 2;
+                
+                // Draw plant base
+                ctx.fillStyle = plantData.color;
+                ctx.beginPath();
+                ctx.arc(x * 16 + 8, y * 16 + 8, size / 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Ready indicator
+                if (plot.ready) {
+                    ctx.strokeStyle = COLORS.YELLOW;
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x * 16, y * 16, 16, 16);
+                }
+            }
+        }
+    }
+    
+    // Cursor
+    ctx.strokeStyle = COLORS.WHITE;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(gameState.cursorX * 16, gameState.cursorY * 16, 16, 16);
+    
+    // HUD at top
+    ctx.fillStyle = COLORS.BLACK;
+    ctx.fillRect(0, 0, 256, 20);
+    
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'left';
+    
+    ctx.fillStyle = COLORS.YELLOW;
+    ctx.fillText(`💰 $${gameState.money}`, 5, 14);
+    
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.fillText(`LVL ${gameState.level}`, 80, 14);
+    
+    // Seeds display
+    let seedText = '';
+    for (let type in gameState.seeds) {
+        if (gameState.seeds[type] > 0) {
+            seedText += `${PLANTS[type].emoji}${gameState.seeds[type]} `;
+        }
+    }
+    ctx.fillText(seedText, 120, 14);
+    
+    // Active event
+    if (gameState.activeEvent) {
+        ctx.fillStyle = COLORS.RED;
+        ctx.fillText(`⚠️ ${gameState.activeEvent.name}`, 5, 30);
+    }
+    
+    // Pets at bottom
+    const petY = 215;
+    for (let i = 0; i < Math.min(4, gameState.pets.length); i++) {
+        ctx.font = '12px monospace';
+        ctx.fillText(gameState.pets[i].emoji, 5 + i * 25, petY);
+    }
+    
+    // Particles
+    for (let p of gameState.particles) {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function renderPause() {
+    // Dim overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, 256, 240);
+    
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    
+    ctx.fillStyle = COLORS.YELLOW;
+    ctx.fillText('PAUSED', 128, 90);
+    
+    ctx.font = '8px monospace';
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.fillText('Z - Resume', 128, 115);
+    ctx.fillText('P - Shop', 128, 130);
+    ctx.fillText('M - Pets', 128, 145);
+}
+
+function renderShop() {
+    ctx.fillStyle = COLORS.DIRT;
+    ctx.fillRect(0, 0, 256, 240);
+    
+    // Header
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS.YELLOW;
+    ctx.fillText('🏪 SHOP 🏪', 128, 15);
+    
+    // Money
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.fillText(`💰 $${gameState.money}`, 200, 14);
+    
+    // Items list
+    const yStart = 35;
+    for (let i = 0; i < SHOP_ITEMS.length; i++) {
+        const item = SHOP_ITEMS[i];
+        const isSelected = i === gameState.shopSelection;
+        
+        if (isSelected) {
+            ctx.fillStyle = COLORS.YELLOW;
+            ctx.fillRect(2, yStart + i * 18, 252, 16);
+        }
+        
+        const canAfford = gameState.money >= item.price;
+        ctx.fillStyle = canAfford ? COLORS.GREEN : COLORS.RED;
+        
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${item.name} $${item.price}`, 5, yStart + i * 18 + 12);
+    }
+    
+    // Instructions
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.textAlign = 'center';
+    ctx.fillText('Z - Buy | X - Back', 128, 230);
+}
+
+function renderPets() {
+    ctx.fillStyle = COLORS.PURPLE;
+    ctx.fillRect(0, 0, 256, 240);
+    
+    // Header
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.fillText('🐾 MY PETS 🐾', 128, 15);
+    
+    // Pet grid
+    const yStart = 35;
+    for (let i = 0; i < gameState.pets.length; i++) {
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        
+        ctx.strokeStyle = COLORS.GOLD;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(5 + col * 48, yStart + row * 26, 46, 24);
+        
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(gameState.pets[i].emoji, 12 + col * 48, yStart + row * 26 + 15);
+    }
+    
+    // Instructions
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.textAlign = 'center';
+    ctx.font = '7px monospace';
+    ctx.fillText('X - Back', 128, 230);
+}
+
+// ============================================
+// MAIN GAME LOOP
+// ============================================
+
+function gameLoop() {
+    update();
+    render();
+    requestAnimationFrame(gameLoop);
+}
+
+// Start the game
+gameLoop();
+
+</script>
+</body>
+</html>
